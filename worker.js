@@ -45,7 +45,7 @@ export default {
       }
       const command = await env.POWERAMP_COMMANDS.get("queue");
       if (command) await env.POWERAMP_COMMANDS.delete("queue");
-      return response({ command: command || null });
+      return response({ command: command ? { command } : null });
     }
 
     if (path === "/command" && request.method === "POST") {
