@@ -4,4 +4,4 @@ compatibility_date = "2026-11-05"
 
 [[kv_namespaces]]
 binding = "POWERAMP_COMMANDS"
-id = "REPLACE_WITH_KV_ID"
+id = "72ddf436d2174fa293890493c71aa003"
