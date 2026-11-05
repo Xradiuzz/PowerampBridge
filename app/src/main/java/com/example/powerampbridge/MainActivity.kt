@@ -1,12 +1,17 @@
 package com.example.powerampbridge
 
+import android.Manifest
 import android.app.Activity
 import android.content.BroadcastReceiver
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.provider.MediaStore
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.Button
@@ -33,6 +38,10 @@ class MainActivity : Activity() {
     private lateinit var albumText: TextView
     private lateinit var statusText: TextView
     private lateinit var tokenInput: EditText
+
+    companion object {
+        private const val AUDIO_PERMISSION_REQUEST = 501
+    }
 
     private val statusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -113,9 +122,12 @@ class MainActivity : Activity() {
                     .edit()
                     .putString("device_token", token)
                     .apply()
-
                 startPolling()
             }
+        }
+
+        addButton("Сканировать музыкальную библиотеку") {
+            requestAudioPermission()
         }
 
         addButton("Открыть Poweramp") {
@@ -138,6 +150,136 @@ class MainActivity : Activity() {
         }
 
         setContentView(layout)
+    }
+
+    private fun requestAudioPermission() {
+        val permission = if (Build.VERSION.SDK_INT >= 33) {
+            Manifest.permission.READ_MEDIA_AUDIO
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+
+        if (checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED) {
+            scanAudioLibrary()
+        } else {
+            requestPermissions(
+                arrayOf(permission),
+                AUDIO_PERMISSION_REQUEST
+            )
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(
+            requestCode,
+            permissions,
+            grantResults
+        )
+
+        if (requestCode == AUDIO_PERMISSION_REQUEST) {
+            if (grantResults.isNotEmpty() &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED
+            ) {
+                scanAudioLibrary()
+            } else {
+                statusText.text = "Нет разрешения на чтение музыки"
+            }
+        }
+    }
+
+    private fun scanAudioLibrary() {
+        statusText.text = "Сканируем музыкальную библиотеку..."
+
+        Thread {
+            try {
+                val collection = if (Build.VERSION.SDK_INT >= 29) {
+                    MediaStore.Audio.Media.getContentUri(
+                        MediaStore.VOLUME_EXTERNAL
+                    )
+                } else {
+                    MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+                }
+
+                val projection = arrayOf(
+                    MediaStore.Audio.Media.TITLE,
+                    MediaStore.Audio.Media.ARTIST,
+                    MediaStore.Audio.Media.ALBUM
+                )
+
+                val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0"
+                val sortOrder =
+                    "${MediaStore.Audio.Media.ARTIST} ASC, " +
+                    "${MediaStore.Audio.Media.TITLE} ASC"
+
+                val tracks = mutableListOf<String>()
+
+                contentResolver.query(
+                    collection,
+                    projection,
+                    selection,
+                    null,
+                    sortOrder
+                )?.use { cursor ->
+
+                    val titleIndex = cursor.getColumnIndexOrThrow(
+                        MediaStore.Audio.Media.TITLE
+                    )
+                    val artistIndex = cursor.getColumnIndexOrThrow(
+                        MediaStore.Audio.Media.ARTIST
+                    )
+                    val albumIndex = cursor.getColumnIndexOrThrow(
+                        MediaStore.Audio.Media.ALBUM
+                    )
+
+                    while (cursor.moveToNext()) {
+                        val title = cursor.getString(titleIndex)
+                            ?: "Неизвестный трек"
+                        val artist = cursor.getString(artistIndex)
+                            ?: "Неизвестный исполнитель"
+                        val album = cursor.getString(albumIndex)
+                            ?: "Неизвестный альбом"
+
+                        tracks.add("$artist — $title [$album]")
+                    }
+                }
+
+                val result = if (tracks.isEmpty()) {
+                    "Музыкальные композиции не найдены."
+                } else {
+                    tracks.joinToString("\n")
+                }
+
+                runOnUiThread {
+                    if (tracks.isNotEmpty()) {
+                        val clipboard =
+                            getSystemService(CLIPBOARD_SERVICE)
+                                as ClipboardManager
+
+                        clipboard.setPrimaryClip(
+                            ClipData.newPlainText(
+                                "Poweramp music library",
+                                result
+                            )
+                        )
+
+                        statusText.text =
+                            "Найдено ${tracks.size} композиций. " +
+                            "Список скопирован!"
+                    } else {
+                        statusText.text = result
+                    }
+                }
+
+            } catch (e: Exception) {
+                runOnUiThread {
+                    statusText.text = "Ошибка сканирования: ${e.message}"
+                }
+            }
+        }.start()
     }
 
     private fun startPolling() {
