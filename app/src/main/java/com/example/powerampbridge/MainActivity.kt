@@ -76,7 +76,7 @@ class MainActivity : Activity() {
 
         tokenInput = EditText(this).apply {
             hint = "Ключ телефона"
-            singleLine = true
+            isSingleLine = true
             setText(
                 getSharedPreferences("bridge", MODE_PRIVATE)
                     .getString("device_token", "")
